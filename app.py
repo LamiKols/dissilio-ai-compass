@@ -9,16 +9,25 @@ from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL",
-    "sqlite:///dissilio_ai_compass.db"
-)
+
+# For Replit MVP testing, SQLite is easiest.
+# If Replit has a DATABASE_URL set, we ignore it unless USE_DATABASE_URL=true.
+if os.environ.get("USE_DATABASE_URL") == "true":
+    database_uri = os.environ.get("DATABASE_URL", "sqlite:///dissilio_ai_compass.db")
+else:
+    database_uri = "sqlite:///dissilio_ai_compass.db"
+
+app.config["SQLALCHEMY_DATABASE_URI"] = database_uri
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
 APP_NAME = "Dissilio AI Compass"
 
+
+# ----------------------------
+# Database Models
+# ----------------------------
 
 class Organisation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -48,136 +57,245 @@ class Assessment(db.Model):
     completed_at = db.Column(db.DateTime, nullable=True)
 
 
+# ----------------------------
+# Response Scale Labels
+# ----------------------------
+
+DEFAULT_SCORE_LABELS = {
+    0: "No / Not in place",
+    1: "Very limited",
+    2: "Partially in place",
+    3: "Mostly in place",
+    4: "Fully in place",
+}
+
+SCALE_LABELS_BY_TYPE = {
+    "control": {
+        0: "No / Not in place",
+        1: "Very limited",
+        2: "Partially in place",
+        3: "Mostly in place",
+        4: "Fully in place",
+    },
+    "awareness": {
+        0: "No awareness",
+        1: "Low awareness",
+        2: "Basic awareness",
+        3: "Good awareness",
+        4: "Strong awareness",
+    },
+    "opportunity": {
+        0: "No opportunity",
+        1: "Low opportunity",
+        2: "Moderate opportunity",
+        3: "High opportunity",
+        4: "Very high opportunity",
+    },
+    "manual_workload": {
+        0: "None",
+        1: "Very few",
+        2: "Some",
+        3: "Many",
+        4: "Extensive",
+    },
+    "data_quality": {
+        0: "Poor / unreliable",
+        1: "Limited quality",
+        2: "Reasonable but inconsistent",
+        3: "Mostly reliable",
+        4: "Structured and reliable",
+    },
+    "investment": {
+        0: "No appetite",
+        1: "Low appetite",
+        2: "Open to discussion",
+        3: "Likely with a clear case",
+        4: "Strong appetite",
+    },
+    "human_review": {
+        0: "Never required",
+        1: "Rarely required",
+        2: "Sometimes required",
+        3: "Usually required",
+        4: "Always required",
+    },
+}
+
+
+# ----------------------------
+# Assessment Question Bank
+# ----------------------------
+
 QUESTIONS = [
     {
         "id": "strategy_1",
         "category": "Strategy & Leadership",
         "question": "Does your organisation have clear objectives for using AI?",
-        "helper": "This checks whether AI is linked to business goals rather than experimentation only."
+        "helper": "This checks whether AI is linked to business goals rather than experimentation only.",
+        "scale_type": "control",
+        "score_use": "readiness",
     },
     {
         "id": "strategy_2",
         "category": "Strategy & Leadership",
         "question": "Is there a senior owner or sponsor responsible for AI adoption?",
-        "helper": "Strong ownership reduces fragmented or unmanaged AI adoption."
+        "helper": "Strong ownership reduces fragmented or unmanaged AI adoption.",
+        "scale_type": "control",
+        "score_use": "readiness",
     },
     {
         "id": "usage_1",
         "category": "Current AI Usage",
         "question": "Do you know which AI tools your staff currently use?",
-        "helper": "This helps identify shadow AI and unmanaged tool usage."
+        "helper": "This helps identify shadow AI and unmanaged tool usage.",
+        "scale_type": "control",
+        "score_use": "governance",
     },
     {
         "id": "usage_2",
         "category": "Current AI Usage",
         "question": "Are AI tools being used consistently across departments?",
-        "helper": "Consistency helps standardise value, controls, and training."
+        "helper": "Consistency helps standardise value, controls, and training.",
+        "scale_type": "control",
+        "score_use": "maturity",
     },
     {
         "id": "process_1",
         "category": "Business Processes",
         "question": "Have your key business processes been documented or mapped?",
-        "helper": "AI works best when processes are understood before automation."
+        "helper": "AI works best when processes are understood before automation.",
+        "scale_type": "control",
+        "score_use": "readiness",
     },
     {
         "id": "process_2",
         "category": "Business Processes",
-        "question": "Do you have repetitive manual tasks that consume significant staff time?",
-        "helper": "High repetition often indicates strong automation potential."
+        "question": "How many repetitive manual tasks consume significant staff time?",
+        "helper": "High manual workload often indicates strong automation potential.",
+        "scale_type": "manual_workload",
+        "score_use": "opportunity",
     },
     {
         "id": "data_1",
         "category": "Data Readiness",
-        "question": "Is your business data structured, accessible, and reasonably accurate?",
-        "helper": "Poor data quality reduces the reliability of AI outputs."
+        "question": "How would you rate the quality and reliability of your business data?",
+        "helper": "Poor data quality reduces the reliability of AI outputs.",
+        "scale_type": "data_quality",
+        "score_use": "readiness",
     },
     {
         "id": "data_2",
         "category": "Data Readiness",
         "question": "Do you know who owns key datasets in your organisation?",
-        "helper": "Data ownership is essential for governance and accountability."
+        "helper": "Data ownership is essential for governance and accountability.",
+        "scale_type": "control",
+        "score_use": "readiness",
     },
     {
         "id": "systems_1",
         "category": "Systems & Technology",
         "question": "Are your core systems cloud-based or integration-friendly?",
-        "helper": "Integration-friendly systems make AI and automation easier to implement."
+        "helper": "Integration-friendly systems make AI and automation easier to implement.",
+        "scale_type": "control",
+        "score_use": "readiness",
     },
     {
         "id": "systems_2",
         "category": "Systems & Technology",
         "question": "Can your existing systems export reports or data reliably?",
-        "helper": "Reliable exports are often the first step toward AI-enabled reporting."
+        "helper": "Reliable exports are often the first step toward AI-enabled reporting.",
+        "scale_type": "control",
+        "score_use": "readiness",
     },
     {
         "id": "governance_1",
         "category": "Governance & Compliance",
         "question": "Do you have an AI acceptable use policy?",
-        "helper": "An AI policy helps staff understand safe and approved use."
+        "helper": "An AI policy helps staff understand safe and approved use.",
+        "scale_type": "control",
+        "score_use": "governance",
     },
     {
         "id": "governance_2",
         "category": "Governance & Compliance",
         "question": "Do you review AI use for privacy, security, or compliance risk?",
-        "helper": "This is important where sensitive business or personal data is involved."
+        "helper": "This is important where sensitive business or personal data is involved.",
+        "scale_type": "control",
+        "score_use": "governance",
     },
     {
         "id": "security_1",
         "category": "Security & Privacy",
         "question": "Are staff trained not to enter confidential or personal data into public AI tools?",
-        "helper": "This reduces data leakage and privacy risk."
+        "helper": "This reduces data leakage and privacy risk.",
+        "scale_type": "control",
+        "score_use": "governance",
     },
     {
         "id": "security_2",
         "category": "Security & Privacy",
         "question": "Do you have access controls for systems containing sensitive data?",
-        "helper": "AI adoption increases the need for good access control."
+        "helper": "AI adoption increases the need for good access control.",
+        "scale_type": "control",
+        "score_use": "governance",
     },
     {
         "id": "people_1",
         "category": "Staff Capability",
-        "question": "Do staff understand how AI can support their role?",
-        "helper": "Low awareness can block adoption and increase misuse."
+        "question": "How aware are staff of how AI could support their role?",
+        "helper": "Low awareness can block adoption and increase misuse.",
+        "scale_type": "awareness",
+        "score_use": "maturity",
     },
     {
         "id": "people_2",
         "category": "Staff Capability",
-        "question": "Have staff received any practical AI training or guidance?",
-        "helper": "Training improves productivity and reduces uncontrolled usage."
+        "question": "Have staff received practical AI training or guidance?",
+        "helper": "Training improves productivity and reduces uncontrolled usage.",
+        "scale_type": "control",
+        "score_use": "readiness",
     },
     {
         "id": "impact_1",
         "category": "Customer / Service Impact",
-        "question": "Could AI improve the experience of your customers, learners, patients, or service users?",
-        "helper": "This checks whether AI can improve service quality, speed, or consistency."
+        "question": "How much opportunity is there for AI to improve your customer, learner, patient, or service-user experience?",
+        "helper": "This checks whether AI can improve service quality, speed, or consistency.",
+        "scale_type": "opportunity",
+        "score_use": "value",
     },
     {
         "id": "impact_2",
         "category": "Customer / Service Impact",
-        "question": "Would AI outputs require human review before being used with customers or service users?",
-        "helper": "Human review is critical for high-impact decisions."
+        "question": "How often would AI outputs require human review before being used with customers or service users?",
+        "helper": "Frequent need for human review can indicate higher impact and higher control requirements.",
+        "scale_type": "human_review",
+        "score_use": "risk",
     },
     {
         "id": "value_1",
         "category": "Financial Value Potential",
-        "question": "Can you identify areas where AI could save cost, reduce admin, or increase revenue?",
-        "helper": "Clear value areas make the business case stronger."
+        "question": "How much opportunity is there for AI to save cost, reduce admin, or increase revenue?",
+        "helper": "Clear value areas make the business case stronger.",
+        "scale_type": "opportunity",
+        "score_use": "value",
     },
     {
         "id": "value_2",
         "category": "Financial Value Potential",
-        "question": "Would leadership invest in AI if a clear business case were produced?",
-        "helper": "Budget appetite helps determine whether to recommend a roadmap or smaller pilot."
+        "question": "How likely is leadership to invest in AI if a clear business case is produced?",
+        "helper": "Budget appetite helps determine whether to recommend a roadmap or smaller pilot.",
+        "scale_type": "investment",
+        "score_use": "value",
     },
 ]
 
-SCORE_LABELS = {
-    0: "Not in place",
-    1: "Very limited",
-    2: "Partially in place",
-    3: "Mostly in place",
-    4: "Strongly in place",
-}
+
+# ----------------------------
+# Scoring Logic
+# ----------------------------
+
+def normalise(value):
+    return round((int(value) / 4) * 100)
 
 
 def score_to_band(score):
@@ -204,69 +322,80 @@ def risk_band(score):
     return "Critical risk"
 
 
+def safe_average(values):
+    return round(mean(values)) if values else 0
+
+
 def calculate_scores(responses):
-    categories = {}
+    category_values = {}
+
+    readiness_values = []
+    maturity_values = []
+    governance_values = []
+    data_values = []
+    opportunity_values = []
+    value_values = []
+    risk_exposure_values = []
 
     for q in QUESTIONS:
-        value = int(responses.get(q["id"], 0))
-        categories.setdefault(q["category"], []).append(value)
+        raw_value = int(responses.get(q["id"], 0))
+        normalised = normalise(raw_value)
+        category_values.setdefault(q["category"], []).append(normalised)
+
+        score_use = q.get("score_use", "readiness")
+
+        if score_use == "readiness":
+            readiness_values.append(normalised)
+
+        if score_use == "maturity":
+            maturity_values.append(normalised)
+
+        if score_use == "governance":
+            governance_values.append(normalised)
+
+        if q["category"] == "Data Readiness":
+            data_values.append(normalised)
+
+        if score_use == "opportunity":
+            opportunity_values.append(normalised)
+
+        if score_use == "value":
+            value_values.append(normalised)
+
+        # Risk logic:
+        # Weak controls increase risk.
+        # Higher human-review requirement increases risk.
+        if score_use == "governance":
+            risk_exposure_values.append(100 - normalised)
+
+        if score_use == "risk":
+            risk_exposure_values.append(normalised)
+
+        if q["id"] == "usage_1":
+            risk_exposure_values.append(100 - normalised)
 
     category_scores = {
-        category: round((mean(values) / 4) * 100)
-        for category, values in categories.items()
+        category: safe_average(values)
+        for category, values in category_values.items()
     }
 
-    def avg(selected_categories):
-        values = [category_scores[c] for c in selected_categories if c in category_scores]
-        return round(mean(values)) if values else 0
-
-    readiness = avg([
-        "Strategy & Leadership",
-        "Data Readiness",
-        "Systems & Technology",
-        "Governance & Compliance",
-        "Staff Capability",
-    ])
-
-    maturity = avg([
-        "Strategy & Leadership",
-        "Current AI Usage",
-        "Governance & Compliance",
-        "Staff Capability",
-    ])
-
-    governance = avg([
-        "Governance & Compliance",
-        "Security & Privacy",
-    ])
-
-    automation = avg([
-        "Business Processes",
-        "Systems & Technology",
-        "Financial Value Potential",
-    ])
-
-    value = avg([
-        "Business Processes",
-        "Customer / Service Impact",
-        "Financial Value Potential",
-    ])
-
-    current_usage_score = category_scores.get("Current AI Usage", 0)
-    security_score = category_scores.get("Security & Privacy", 0)
-    governance_score = category_scores.get("Governance & Compliance", 0)
-
-    risk = round(100 - mean([security_score, governance_score, current_usage_score]))
+    ai_readiness_score = safe_average(readiness_values + governance_values + maturity_values)
+    ai_maturity_score = safe_average(maturity_values + governance_values)
+    data_readiness_score = safe_average(data_values)
+    governance_maturity_score = safe_average(governance_values)
+    automation_opportunity_score = safe_average(opportunity_values)
+    business_value_potential_score = safe_average(value_values + opportunity_values)
+    ai_risk_score = safe_average(risk_exposure_values)
 
     return {
         "category_scores": category_scores,
-        "ai_readiness_score": readiness,
-        "ai_maturity_score": maturity,
-        "ai_risk_score": risk,
-        "data_readiness_score": category_scores.get("Data Readiness", 0),
-        "governance_maturity_score": governance,
-        "automation_opportunity_score": automation,
-        "business_value_potential_score": value,
+        "ai_readiness_score": ai_readiness_score,
+        "ai_maturity_score": ai_maturity_score,
+        "ai_risk_score": ai_risk_score,
+        "data_readiness_score": data_readiness_score,
+        "governance_maturity_score": governance_maturity_score,
+        "automation_opportunity_score": automation_opportunity_score,
+        "business_value_potential_score": business_value_potential_score,
     }
 
 
@@ -301,9 +430,9 @@ def generate_recommendations(scores):
         })
     else:
         recs.append({
-            "title": "Document key processes before automation",
+            "title": "Improve process clarity before automation",
             "priority": "Medium",
-            "text": "Your automation opportunity score suggests process clarity should be improved before solution design."
+            "text": "The assessment suggests there may not yet be enough process clarity or automation demand to start building immediately."
         })
 
     if scores["data_readiness_score"] < 50:
@@ -403,6 +532,10 @@ def generate_opportunities(scores):
     return opportunities
 
 
+# ----------------------------
+# UI Styling
+# ----------------------------
+
 BASE_CSS = """
 <style>
 :root {
@@ -413,7 +546,6 @@ BASE_CSS = """
   --line: rgba(255,255,255,0.12);
   --accent: #bfa46f;
   --accent2: #38bdf8;
-  --danger: #fb7185;
 }
 * { box-sizing: border-box; }
 body {
@@ -562,6 +694,10 @@ def page(title, body):
 """)
 
 
+# ----------------------------
+# Routes
+# ----------------------------
+
 @app.route("/")
 def home():
     body = """
@@ -636,11 +772,11 @@ def start():
         db.session.add(org)
         db.session.commit()
 
-        assessment = Assessment(organisation_id=org.id, status="in_progress")
-        db.session.add(assessment)
+        assessment_record = Assessment(organisation_id=org.id, status="in_progress")
+        db.session.add(assessment_record)
         db.session.commit()
 
-        return redirect(url_for("assessment", assessment_id=assessment.id))
+        return redirect(url_for("assessment", assessment_id=assessment_record.id))
 
     body = """
     <div class="card">
@@ -721,9 +857,13 @@ def assessment(assessment_id):
         return redirect(url_for("results", assessment_id=assessment_record.id))
 
     question_html = ""
+
     for q in QUESTIONS:
+        scale_type = q.get("scale_type", "control")
+        scale_labels = SCALE_LABELS_BY_TYPE.get(scale_type, DEFAULT_SCORE_LABELS)
+
         options = ""
-        for value, label in SCORE_LABELS.items():
+        for value, label in scale_labels.items():
             checked = "checked" if value == 2 else ""
             options += f"""
             <label>
@@ -745,7 +885,7 @@ def assessment(assessment_id):
       <h1>AI Readiness Assessment</h1>
       <p>
         Organisation: <strong>{assessment_record.organisation.name}</strong><br>
-        Answer each question using the 0–4 maturity scale.
+        Answer each question using the options provided.
       </p>
       <form method="post">
         {question_html}
@@ -817,6 +957,7 @@ def results(assessment_id):
 
     <section style="margin-top:24px;" class="card">
       <h2>Category scores</h2>
+      <p class="muted">These scores show the organisation's current strength or opportunity level in each area.</p>
       <table class="table">
         <tr><th>Category</th><th>Score</th><th>Band</th><th>Progress</th></tr>
         {category_rows}
@@ -841,9 +982,7 @@ def results(assessment_id):
 
     <section style="margin-top:24px;" class="card">
       <h2>Unlock full report</h2>
-      <p>
-        This MVP uses a simulated payment unlock. In production, connect this button to Stripe Checkout.
-      </p>
+      <p>This MVP uses a simulated payment unlock. In production, connect this button to Stripe Checkout.</p>
       <a class="btn" href="/unlock/{assessment_record.id}">Simulate £149 Report Unlock</a>
       <a class="btn secondary" href="/report/{assessment_record.id}">View Report</a>
     </section>
@@ -871,10 +1010,7 @@ def report(assessment_id):
         body = f"""
         <div class="card">
           <h1>Full report locked</h1>
-          <p>
-            The full AI readiness report is available after payment.
-            This MVP uses a simulated payment unlock.
-          </p>
+          <p>The full AI readiness report is available after payment. This MVP uses a simulated payment unlock.</p>
           <a class="btn" href="/unlock/{assessment_record.id}">Simulate Unlock</a>
           <a class="btn secondary" href="/results/{assessment_record.id}">Back to Results</a>
         </div>
@@ -979,9 +1115,7 @@ def report(assessment_id):
 
     <section style="margin-top:24px;" class="card">
       <h2>Suggested Dissilio Consultancy Offer</h2>
-      <p>
-        Based on this result, the recommended next commercial offer is:
-      </p>
+      <p>Based on this result, the recommended next commercial offer is:</p>
       <div class="kpi">
         <strong>AI Audit Review Call + AI Opportunity Discovery Workshop</strong>
         <p>
